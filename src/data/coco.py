@@ -49,7 +49,8 @@ class CocoDataset(Dataset):
 
     def __getitem__(self, idx):
         imagepath = os.path.join(self.imgpath, self.imagelist[idx]["file_name"])
-        image = plt.imread(imagepath)
+        image = torch.tensor(plt.imread(imagepath))
+        image = image.permute(2,0,1)
         boxes = {}
         segments = {}
 
