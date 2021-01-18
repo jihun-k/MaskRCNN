@@ -1,3 +1,4 @@
+import PIL
 import torch
 import json
 import os
@@ -5,6 +6,7 @@ import os
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 import matplotlib.pyplot as plt
+from PIL import Image
 
 class CocoDataset(Dataset):
     ''' coco dataset '''
@@ -49,18 +51,21 @@ class CocoDataset(Dataset):
 
     def __getitem__(self, idx):
         imagepath = os.path.join(self.imgpath, self.imagelist[idx]["file_name"])
-        image = torch.tensor(plt.imread(imagepath))
-        image = image.permute(2,0,1)
-        boxes = {}
-        segments = {}
+        image = Image.open(imagepath).convert("RGB")
+        image = transforms.ToTensor()(image)
+
+        boxes = []
+        labels = []
 
         for item in self.annotlist[idx]:
-            category = item["category_id"]
-            if category not in boxes:
-                boxes[category] = []
-            boxes[category].append(item["bbox"])
-            if category not in segments:
-                segments[category] = []
-            segments[category].append(item["segmentation"])
+            labels.append(item["category_id"])
+            boxes.append(item["bbox"])
 
-        return image, boxes, segments
+        boxes = torch.tensor(boxes)
+        labels = torch.tensor(labels)
+
+        annotations = {}
+        annotations["boxes"] = boxes
+        annotations["labels"] = labels
+        
+        return image, annotations
