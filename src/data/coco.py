@@ -1,10 +1,10 @@
-import torch
 import json
 import os
 
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
-import matplotlib.pyplot as plt
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
+
 
 class CocoDataset(Dataset):
     ''' coco dataset '''
@@ -18,6 +18,7 @@ class CocoDataset(Dataset):
         '''
         self.imgpath = imgpath
         self.jsonpath = jsonpath
+        self.transform = transform
         
         with open(jsonpath) as f:
             data = json.load(f)
@@ -49,18 +50,39 @@ class CocoDataset(Dataset):
 
     def __getitem__(self, idx):
         imagepath = os.path.join(self.imgpath, self.imagelist[idx]["file_name"])
-        image = torch.tensor(plt.imread(imagepath))
-        image = image.permute(2,0,1)
-        boxes = {}
-        segments = {}
+        image = Image.open(imagepath).convert("RGB")
+
+        # resize image
+        w, h = image.size
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        size = image.shape[1]
+
+        if w >= h:
+            scale = size / w
+        else:
+            scale = size / h
+
+        boxes = []
+        labels = []
 
         for item in self.annotlist[idx]:
-            category = item["category_id"]
-            if category not in boxes:
-                boxes[category] = []
-            boxes[category].append(item["bbox"])
-            if category not in segments:
-                segments[category] = []
-            segments[category].append(item["segmentation"])
+            labels.append(item["category_id"])
+            boxes.append(item["bbox"])
 
-        return image, boxes, segments
+        boxes = torch.tensor(boxes)
+        labels = torch.tensor(labels)
+
+        # resize bounding box
+        if len(boxes) != 0:
+            # boxes[:,2] += boxes[:,0]
+            # boxes[:,3] += boxes[:,1]
+            boxes = boxes * scale
+
+        annotations = {}
+        annotations["boxes"] = boxes
+        annotations["labels"] = labels
+        
+        return image, annotations
