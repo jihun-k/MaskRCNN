@@ -1,12 +1,10 @@
-import PIL
-import torch
 import json
 import os
 
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
-import matplotlib.pyplot as plt
+import torch
 from PIL import Image
+from torch.utils.data import Dataset
+
 
 class CocoDataset(Dataset):
     ''' coco dataset '''

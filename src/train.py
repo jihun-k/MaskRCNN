@@ -1,16 +1,18 @@
-from PIL import Image
+import os
+
+import numpy as np
 import torch
 import torchvision
-import os
-import numpy as np
-from torch.utils.tensorboard import SummaryWriter
+from PIL import Image
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
+import models
 from config import ROOT_DIR
 from data import coco
 from utils.transforms import ResizeSquare
-import models
+
 
 def main():
     ''' main '''

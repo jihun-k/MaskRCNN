@@ -1,11 +1,10 @@
-import torch
-from torch.nn.modules import padding
-import torchvision
 import torch.nn as nn
 from PIL import Image
 from torchvision import transforms
 
 from models.backbone.res_fpn import Res50FPN
+from models.proposal.rpn import RPN
+
 
 class GenerallizedRCNN(nn.Module):
     ''' generalized rcnn '''
@@ -43,7 +42,7 @@ class MaskRCNN(GenerallizedRCNN):
             
         )
         backbone = Res50FPN()
-        rpn = nn.Module()
+        rpn = RPN()
         roi_heads = nn.Module()
 
         super(MaskRCNN, self).__init__(backbone, rpn, roi_heads, transform)

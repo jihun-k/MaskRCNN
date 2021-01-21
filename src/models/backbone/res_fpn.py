@@ -1,8 +1,5 @@
-from typing import Optional
 import torch.nn as nn
-from torch.nn.modules import conv, padding
-from torch.nn.modules.conv import Conv2d
-from torchvision.transforms.functional import pad
+
 
 class Bottleneck(nn.Module):
     ''' resnet bottleneck '''
@@ -102,4 +99,4 @@ class Res50FPN(nn.Module):
         f3 = self.fpn_layer5(p3)
         f2 = self.fpn_layer5(p2)
 
-        return f6, f5, f4, f3, f2
+        return f2, f3, f4, f5, f6

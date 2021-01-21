@@ -1,8 +1,6 @@
-from PIL import Image
-from torch import tensor
-from torchvision import transforms
-from torchvision.transforms.functional import resize
 import numpy as np
+from PIL import Image
+
 
 class ResizeSquare(object):
     '''
