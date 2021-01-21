@@ -1,5 +1,4 @@
-from models.backbone.resnet import ResNet
-
+from models.maskrcnn import MaskRCNN
 
 def build_model():
-    return ResNet()
+    return MaskRCNN()

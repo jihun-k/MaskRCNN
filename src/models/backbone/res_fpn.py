@@ -1,7 +1,8 @@
 from typing import Optional
 import torch.nn as nn
-from torch.nn.modules import conv
+from torch.nn.modules import conv, padding
 from torch.nn.modules.conv import Conv2d
+from torchvision.transforms.functional import pad
 
 class Bottleneck(nn.Module):
     ''' resnet bottleneck '''
@@ -51,27 +52,54 @@ class ResBlock(nn.Module):
         return self.layers(x)
 
 
-class ResNet(nn.Module):
+class Res50FPN(nn.Module):
     ''' backbone resnet '''
     def __init__(self):
-        super(ResNet, self).__init__()
+        super(Res50FPN, self).__init__()
+
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64, affine=False, track_running_stats=False)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+
         self.layer1 = ResBlock(64, 64, 256, repeat=3, downsample_stride=1)
         self.layer2 = ResBlock(256, 128, 512, repeat=4, downsample_stride=2)
         self.layer3 = ResBlock(512, 256, 1024, repeat=6, downsample_stride=2)
         self.layer4 = ResBlock(1024, 512, 2048, repeat=3, downsample_stride=2)
+
+        self.fpn_inner2 = nn.Conv2d(256, 256, kernel_size=1, stride=1)
+        self.fpn_inner3 = nn.Conv2d(512, 256, kernel_size=1, stride=1)
+        self.fpn_inner4 = nn.Conv2d(1024, 256, kernel_size=1, stride=1)
+        self.fpn_inner5 = nn.Conv2d(2048, 256, kernel_size=1, stride=1)
+
+        self.fpn_layer2 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+        self.fpn_layer3 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+        self.fpn_layer4 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+        self.fpn_layer5 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
+
+        self.fpn_upsample = nn.Upsample(scale_factor=(1,2,2))
+        self.fpn_maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         
-    def forward(self, x):
-        ''' forward '''
+        
+    def forward(self, x, targets=None):
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
-        x = self.maxpool(x)
-        x = self.layer1(x)
-        x = self.layer2(x)
-        x = self.layer3(x)
-        x = self.layer4(x)
-        return x
+        c1 = self.maxpool(x)
+        c2 = self.layer1(c1)
+        c3 = self.layer2(c2)
+        c4 = self.layer3(c3)
+        c5 = self.layer4(c4)
+
+        f6 = self.fpn_maxpool(c5)
+        p5 = self.fpn_inner5(c5) + self.fpn_upsample(f6)
+        p4 = self.fpn_inner4(c4) + self.fpn_upsample(p5)
+        p3 = self.fpn_inner3(c3) + self.fpn_upsample(p4)
+        p2 = self.fpn_inner2(c2) + self.fpn_upsample(p3)
+
+        f5 = self.fpn_layer5(p5)
+        f4 = self.fpn_layer5(p4)
+        f3 = self.fpn_layer5(p3)
+        f2 = self.fpn_layer5(p2)
+
+        return f6, f5, f4, f3, f2

@@ -20,6 +20,7 @@ class CocoDataset(Dataset):
         '''
         self.imgpath = imgpath
         self.jsonpath = jsonpath
+        self.transform = transform
         
         with open(jsonpath) as f:
             data = json.load(f)
@@ -52,7 +53,19 @@ class CocoDataset(Dataset):
     def __getitem__(self, idx):
         imagepath = os.path.join(self.imgpath, self.imagelist[idx]["file_name"])
         image = Image.open(imagepath).convert("RGB")
-        image = transforms.ToTensor()(image)
+
+        # resize image
+        w, h = image.size
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        size = image.shape[1]
+
+        if w >= h:
+            scale = size / w
+        else:
+            scale = size / h
 
         boxes = []
         labels = []
@@ -63,6 +76,12 @@ class CocoDataset(Dataset):
 
         boxes = torch.tensor(boxes)
         labels = torch.tensor(labels)
+
+        # resize bounding box
+        if len(boxes) != 0:
+            boxes[:,2] += boxes[:,0]
+            boxes[:,3] += boxes[:,1]
+            boxes = boxes * scale
 
         annotations = {}
         annotations["boxes"] = boxes
