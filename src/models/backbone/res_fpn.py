@@ -74,7 +74,7 @@ class Res50FPN(nn.Module):
         self.fpn_layer4 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
         self.fpn_layer5 = nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1)
 
-        self.fpn_upsample = nn.Upsample(scale_factor=(1,2,2))
+        self.fpn_upsample = nn.Upsample(scale_factor=(2,2),)
         self.fpn_maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         
         
@@ -88,15 +88,17 @@ class Res50FPN(nn.Module):
         c4 = self.layer3(c3)
         c5 = self.layer4(c4)
 
-        f6 = self.fpn_maxpool(c5)
-        p5 = self.fpn_inner5(c5) + self.fpn_upsample(f6)
+        p5 = self.fpn_inner5(c5)
         p4 = self.fpn_inner4(c4) + self.fpn_upsample(p5)
         p3 = self.fpn_inner3(c3) + self.fpn_upsample(p4)
         p2 = self.fpn_inner2(c2) + self.fpn_upsample(p3)
 
+        f2 = self.fpn_layer2(p2)
+        f3 = self.fpn_layer3(p3)
+        f4 = self.fpn_layer4(p4)
         f5 = self.fpn_layer5(p5)
-        f4 = self.fpn_layer5(p4)
-        f3 = self.fpn_layer5(p3)
-        f2 = self.fpn_layer5(p2)
+        f6 = self.fpn_maxpool(f5)
 
-        return f2, f3, f4, f5, f6
+        features = [f2, f3, f4, f5, f6]
+
+        return features

@@ -77,8 +77,8 @@ class CocoDataset(Dataset):
 
         # resize bounding box
         if len(boxes) != 0:
-            boxes[:,2] += boxes[:,0]
-            boxes[:,3] += boxes[:,1]
+            # boxes[:,2] += boxes[:,0]
+            # boxes[:,3] += boxes[:,1]
             boxes = boxes * scale
 
         annotations = {}

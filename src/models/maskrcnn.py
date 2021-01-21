@@ -4,6 +4,7 @@ from torchvision import transforms
 
 from models.backbone.res_fpn import Res50FPN
 from models.proposal.rpn import RPN
+from models.roi_head.roi_head import RoIHead
 
 
 class GenerallizedRCNN(nn.Module):
@@ -18,20 +19,18 @@ class GenerallizedRCNN(nn.Module):
     def forward(self, images, targets):
         '''
             Args:
-                images  ([b, c, h, w])
+                images  ([b, c, w, h])
                 targets ([b, Dict["boxes", "labels"]])
         '''
-
         features = self.backbone(images, targets)
-        
-        # proposals, proposal_losses = self.rpn(features, targets)
-        # detections, detector_losses = self.roi_heads(features, proposals, targets)
+        proposals, proposal_losses = self.rpn(images, features, targets)
+        detections, detector_losses = self.roi_heads(features, proposals, targets)
 
-        # losses = {}
-        # losses.update(detector_losses)
-        # losses.update(proposal_losses)
+        losses = {}
+        losses.update(detector_losses)
+        losses.update(proposal_losses)
     
-        # return losses, detections
+        return losses, detections
 
 
 class MaskRCNN(GenerallizedRCNN):
@@ -43,6 +42,6 @@ class MaskRCNN(GenerallizedRCNN):
         )
         backbone = Res50FPN()
         rpn = RPN()
-        roi_heads = nn.Module()
+        roi_heads = RoIHead()
 
         super(MaskRCNN, self).__init__(backbone, rpn, roi_heads, transform)

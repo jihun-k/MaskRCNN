@@ -48,15 +48,17 @@ def main():
         
         image, boxes, labels = image.to(device), annotations["boxes"].to(device), annotations["labels"].to(device)
         model.train(False)
-        # res = model(image, annotations)
+        res = model(image, annotations)
 
-        '''
+        
         # draw ground truth bounding boxes on image
-        if i == 6:
-            writer.add_image_with_boxes("image/debug", image[0], boxes[0])
-            writer.flush()
-            break
-        '''
+        # box_clone = boxes[0].detach().clone()
+        # box_clone[:,2] += box_clone[:,0]
+        # box_clone[:,3] += box_clone[:,1]
+        # writer.add_image_with_boxes("image/debug", image[0], box_clone)
+        # writer.flush()
+        # break
+        
 
         '''
         # draw result bounding boxes on image
@@ -73,6 +75,7 @@ def main():
                     boxes_valid.append(boxes[i])
             writer.add_image_with_boxes("image/debug", image[batch], res[batch]["boxes"])
         '''
+        break
 
 if __name__ == "__main__":
     main()
