@@ -52,8 +52,8 @@ class RoIHead(nn.Module):
         self.cls_score = nn.Linear(1024, 80)
         self.bbox_pred = nn.Linear(1024, 80*4)
 
-    def forward(self, x, target=None):
-        x = self.roi_align(x)
+    def forward(self, features, proposals):
+        x = self.roi_align(features, proposals)
         x = self.box_head(x)
         cls_score = self.cls_score(x)
         bbox_pred = self.bbox_pred(x)
