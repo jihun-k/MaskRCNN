@@ -69,8 +69,9 @@ class CocoDataset(Dataset):
         labels = []
 
         for item in self.annotlist[idx]:
-            labels.append(item["category_id"])
-            boxes.append(item["bbox"])
+            if item["category_id"] == 1:
+                labels.append(item["category_id"])
+                boxes.append(item["bbox"])
 
         boxes = torch.tensor(boxes)
         labels = torch.tensor(labels)
@@ -80,9 +81,5 @@ class CocoDataset(Dataset):
             # boxes[:,2] += boxes[:,0]
             # boxes[:,3] += boxes[:,1]
             boxes = boxes * scale
-
-        annotations = {}
-        annotations["boxes"] = boxes
-        annotations["labels"] = labels
         
-        return image, annotations
+        return image, boxes, labels
