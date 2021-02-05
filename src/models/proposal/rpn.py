@@ -310,7 +310,7 @@ class RPN(nn.Module):
         # '''
         pred_objectness_logits = torch.cat(pred_objectness_logits, dim=1)
         # pos_mask = pred_objectness_logits >= 0.7
-        pos_mask = pred_objectness_logits.topk(50)[1]
+        pos_mask = pred_objectness_logits.topk(10)[1]
         proposals = proposals[0][pos_mask]
         # pos_original_anchor = torch.cat(anchors)[pos_mask]
         # '''

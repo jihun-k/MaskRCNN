@@ -8,11 +8,12 @@ def xywh_to_xyxy(boxes):
         Returns:
             List([x1,y1,x2,y2])
     '''
-    orig_shape = boxes.shape
-    boxes.reshape((-1,4))
-    boxes[...,2] = boxes[...,0] + boxes[...,2]
-    boxes[...,3] = boxes[...,1] + boxes[...,3]
-    return boxes.reshape(orig_shape)
+    xyxy = torch.zeros(boxes.shape, device=boxes.device)
+    xyxy[...,0] = boxes[...,0]
+    xyxy[...,1] = boxes[...,1]
+    xyxy[...,2] = boxes[...,0] + boxes[...,2]
+    xyxy[...,3] = boxes[...,1] + boxes[...,3]
+    return xyxy
 
 def cwh_to_xywh(boxes):
     '''

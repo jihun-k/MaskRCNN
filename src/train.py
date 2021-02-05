@@ -45,32 +45,38 @@ def main():
 
     model.train()
     
+    i = 0
     for epoch in range(1000):
         print(epoch, "epoch")
-        for i, (image, boxes, labels) in enumerate(train_loader):
+        for _, (image, boxes, labels) in enumerate(train_loader):
+            if boxes.numel() == 0:
+                continue
 
             image, boxes = image.to(device), boxes.to(device)
 
             model.train()
 
-            proposals, losses = model(image, boxes)
+            for j in range(10):
+                proposals, losses = model(image, boxes)
 
-            print(i, losses)
-            if i % 1000 == 0:
-                writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], epoch)
-                writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], epoch)
-                writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0])
-                writer.flush()
-                model_name = "rpn_" + str(epoch) + "_" + str(i) + ".pkl"
-                torch.save(model.state_dict(), os.path.join(ROOT_DIR, "models", model_name))
-                
+                print(i, losses)
+                if i % 10 == 0 and j == 9:
+                    writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], i)
+                    writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], i)
+                    writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0])
+                    writer.flush()
+                    model_name = "rpn.pkl"
+                    torch.save(model.state_dict(), os.path.join(ROOT_DIR, "models", model_name))
+                    
 
-            rpn_lambda = 10
-            losses = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
+                rpn_lambda = 10
+                losses = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
 
-            optimizer.zero_grad()
-            losses.backward()
-            optimizer.step()
+                optimizer.zero_grad()
+                losses.backward()
+                optimizer.step()
+
+            i += 1
 
 if __name__ == "__main__":
     main()
