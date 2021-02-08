@@ -130,4 +130,5 @@ dmypy.json
 
 .vscode/*
 datasets/*
-runs/*
+runs
+models
