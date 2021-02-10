@@ -1,3 +1,4 @@
+import datetime
 import os
 
 import torch
@@ -8,6 +9,7 @@ from torchvision import transforms
 import models
 from config import ROOT_DIR
 from data import coco
+from utils import box_util
 from utils.transforms import ResizeSquare
 
 
@@ -39,20 +41,26 @@ def main():
     model = models.MaskRCNN(writer)
     model.to(device)
     
-    optimizer = torch.optim.SGD(model.rpn.parameters(), lr=0.01, momentum=0.9)
-    # TODO lr scheduler
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 100)
+    optimizer = torch.optim.SGD(model.rpn.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
 
-    model.train()
-
-    max_iteration = 1000
+    train_image_count = 10
+    max_iteration = 800
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=60000, gamma=0.1)
     
-    for epoch in range(max_iteration):
-        print(epoch, "epoch")
+    model_name = "rpn " + str(datetime.datetime.now()) + ".pkl"
+
+    # model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "models", model_name)))
+    
+    for iter in range(max_iteration):
+        print(iter, "epoch")
         i = 0
         for _, (image, boxes, labels) in enumerate(train_loader):
             if boxes.numel() == 0:
                 continue
+
+            if iter==0:
+                writer.add_image_with_boxes("GT/gt_"+str(i), image[0], box_util.xywh_to_xyxy(boxes[0]), global_step=iter)
+                writer.flush()
 
             image, boxes = image.to(device), boxes.to(device)
 
@@ -61,26 +69,25 @@ def main():
             proposals, losses = model(image, boxes)
 
             print(i, losses)
-            if epoch == max_iteration-1 and i < 100:
-                writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=epoch)
+            if iter != 0 and iter%10 == 0:
+                writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=iter)
 
-            if i == 0:
-                if epoch%10 == 0:
-                    writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], epoch)
-                    writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], epoch)
-                    writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=epoch)
-                    writer.flush()
-                    model_name = "rpn.pkl"
-                    torch.save(model.state_dict(), os.path.join(ROOT_DIR, "models", model_name))
-                break
 
             rpn_lambda = 10
-            losses = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
+            loss = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
 
             optimizer.zero_grad()
-            losses.backward()
+            loss.backward()
             optimizer.step()
+            scheduler.step()
 
+            if i == train_image_count-1:
+                writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], iter)
+                writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], iter)
+                writer.add_scalar("lr", optimizer.param_groups[0]["lr"], global_step=iter)
+                writer.flush()
+                torch.save(model.state_dict(), os.path.join(ROOT_DIR, "models", model_name))
+                break
             i += 1
 
 if __name__ == "__main__":
