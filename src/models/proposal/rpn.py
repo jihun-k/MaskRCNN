@@ -87,7 +87,8 @@ class RPNHead(nn.Module):
         logits = []
         bbox = []
         for feature in x:
-            t = self.relu(self.conv(feature))
+            t = self.conv(feature)
+            t = self.relu(t)
             logits.append(nn.Sequential(
                 self.cls_logits,
                 # self.softmax
@@ -110,18 +111,18 @@ class RPN(nn.Module):
     def label_anchors(self, anchors, gt_boxes, images):
         '''
             Args:
-                anchors (b, sum(A*w*h), 4): anchors for each feature map. (cx, cy, w, h)
-                gt_boxes [b, N, 4]: the ground-truth instances for each image. (x, y, w, h)
+                anchors [b, num_total_anchors, 4]: single tensor of all anchors from features. (cwh)
+                gt_boxes [b, num_gt_boxes, 4]: the ground-truth instances for each image. (xywh)
                 images for debug
             Returns:
                 list[Tensor]:
-                    gt_labels
+                    gt_labels [b, num_total_anchors]
                     List of #img tensors. i-th element is a vector of labels whose length is
                     the total number of anchors across all feature maps R = sum(Hi * Wi * A).
                     Label values are in {-1, 0, 1}, with meanings: -1 = ignore; 0 = negative
                     class; 1 = positive class.
                 list[Tensor]:
-                    matched_gt_boxes (xyxy)
+                    matched_gt_boxes [b, num_total_anchors, 4] (xyxy)
                     i-th element is a Rx4 tensor. The values are the matched gt boxes for each
                     anchor. Values are undefined for those anchors not labeled as 1.
         '''
@@ -141,7 +142,7 @@ class RPN(nn.Module):
             else:
                 gt_boxes_i = box_util.xywh_to_xyxy(gt_boxes_i)
 
-                # N (anchor) * M (gt box) matrix 
+                # (num_total_anchor) * (num_gt_box) match quality matrix 
                 iou_matrix = box_util.get_iou(anchors_xyxy, gt_boxes_i)
 
                 matched_gt_score, matched_gt_idx = torch.max(iou_matrix, dim=1)
@@ -165,26 +166,17 @@ class RPN(nn.Module):
         return gt_labels, matched_gt_boxes
 
     def sample_anchors(self, anchors, gt_labels, images):
-        # filter out-of-image anchors
-        # anchors = torch.cat(anchors)
-        # idx_inside = (
-        #     (anchors[..., 0] >= 0)
-        #     & (anchors[..., 1] >= 0)
-        #     & (anchors[..., 2] < images.shape[-1])
-        #     & (anchors[..., 3] < images.shape[-1])
-        # )
         for gt_label in gt_labels:
-            # gt_label[~idx_inside] = -1
             
-            positive = torch.where((gt_label != -1) & (gt_label != 0))[0]
+            positive = torch.where(gt_label == 1)[0]
             negative = torch.where(gt_label == 0)[0]
 
-            num_pos = 128
             # protect against not enough positive examples
             num_pos = min(positive.numel(), 128)
-            num_neg = 256 - num_pos
-            # protect against not enough negative examples
-            num_neg = min(negative.numel(), num_neg)
+            # num_neg = 256 - num_pos
+            # # protect against not enough negative examples
+            # num_neg = min(negative.numel(), num_neg)
+            num_neg = num_pos
 
             # randomly select positive and negative examples
             perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
@@ -200,17 +192,6 @@ class RPN(nn.Module):
             gt_label.scatter_(0, neg_idx, 0)
             
         return gt_labels
-
-    def smooth_l1(self, input: torch.Tensor):
-        input = torch.where(input <= -1, -input - 0.5, input)
-        input = torch.where(input >= 1, input - 0.5, input)
-        input = torch.where((input > -1) & (input < 1), input * input * 0.5, input)
-
-        return input
-
-    def cross_entropy(input, target):
-        torch.softmax(input)
-        return
 
     def compute_loss(self, anchors, pred_objectness_logits, pred_bbox_deltas, gt_labels, gt_boxes, writer):
         '''
@@ -232,15 +213,10 @@ class RPN(nn.Module):
         print("# of pos/neg anchors: ", num_pos_anchors, num_neg_anchors)
 
         # box regression loss
-        # anchors = torch.cat(anchors)  # (R, 4)
-        # target_deltas = [box_util.get_deltas(anchors, box_util.xyxy_to_cxy(k)) for k in gt_boxes]
         target_deltas = [box_util.get_deltas(anchors, box_util.xyxy_to_cxy(gt_boxes_i)) for gt_boxes_i in gt_boxes]
 
         target_deltas = torch.stack(target_deltas)  # (N_images, R, 4) (dx dy dw dh)
 
-        # pred_bbox_deltas = torch.cat(pred_bbox_deltas, dim=1) # (dx dy dw dh)
-
-        # loss_box_reg = self.smooth_l1(target_deltas - pred_bbox_deltas).sum()
         loss_box_reg = F.smooth_l1_loss(pred_bbox_deltas[pos_mask], target_deltas[pos_mask], reduction="sum")
         
         # classification loss
@@ -261,7 +237,7 @@ class RPN(nn.Module):
             Args:
                 images [b, c, w, h] : original images
                 features List([b, c, w, h]): from backbone
-                targets: GT labels [b, N, 4] (x y w h)
+                targets: GT labels [b, N, 4] (xywh)
             Returns:
                 detections: list of detections
                     bbox : List([b, 4*k, feat_x, feat_y])
@@ -279,17 +255,17 @@ class RPN(nn.Module):
         losses = []
 
         # generate anchors
-        anchors = self.anchor_generator(images, features) # List([A*w*h, 4]) (cx, cy, w, h)
+        anchors = self.anchor_generator(images, features) # list of [A*w*h, 4] for features (cwh)
 
         # rpn forward
-        pred_objectness_logits, pred_bbox_deltas = self.head(features)
+        pred_objectness_logits, pred_bbox_deltas = self.head(features) # list of [b,A,w,h], [b,4A,w,h] for features (delta)
         
-        pred_objectness_logits = [ # List([b, A, w, h]) -> List([b, A*w*h])
+        pred_objectness_logits = [ # reshape [b, A, w, h] -> [b, Awh]
             cls.permute(0, 2, 3, 1).reshape((cls.shape[0], -1)) for cls in pred_objectness_logits]
-        pred_bbox_deltas = [ # List([b, 4*A, w, h]) -> List([b, 4*A*w*h, 4*A]) (dx dy dw dh)
+        pred_bbox_deltas = [ #  reshape [b, 4A, w, h] -> [b, 4Awh, 4A] (delta)
             box.permute(0, 2, 3, 1).reshape((box.shape[0], -1, 4)) for box in pred_bbox_deltas]
 
-        # collect anchors from each fpn feature
+        # list of tensors for features -> single tensor
         anchors = torch.cat(anchors)
         pred_objectness_logits = torch.cat(pred_objectness_logits, dim=1)
         pred_bbox_deltas = torch.cat(pred_bbox_deltas, dim=1)
@@ -302,13 +278,12 @@ class RPN(nn.Module):
             & (anchors_xyxy[..., 2] < images.shape[-1])
             & (anchors_xyxy[..., 3] < images.shape[-1])
         )
-
         anchors = anchors[idx_inside]
         pred_objectness_logits = pred_objectness_logits[:,idx_inside]
         pred_bbox_deltas = pred_bbox_deltas[:,idx_inside]
         
         if self.training:
-            # label and sample anchors ([N], [N, 4]) (x1 y1 x2 y2)
+            # label and sample anchors [N], [N, 4] (xyxy)
             gt_labels, gt_boxes = self.label_anchors(anchors, gt_boxes, images)
             gt_labels = self.sample_anchors(anchors, gt_labels, images)
 
@@ -317,8 +292,6 @@ class RPN(nn.Module):
                 anchors, pred_objectness_logits, pred_bbox_deltas, gt_labels, gt_boxes, self.writer)
 
         # decode bbox proposals
-        # proposals = [box_util.apply_deltas(lvl_anchors.unsqueeze(0), deltas) for lvl_anchors, deltas in zip(anchors, pred_bbox_deltas)]
-        # proposals = torch.cat(proposals, dim=1)
         proposals = box_util.apply_deltas(anchors, pred_bbox_deltas)
         proposals = box_util.cwh_to_xyxy(proposals)
 
@@ -332,7 +305,7 @@ class RPN(nn.Module):
         # '''
         pred = []
         for i, p in enumerate(proposals):
-            pos_val, pos_mask = pred_objectness_logits[i].topk(10)
+            pos_val, pos_mask = pred_objectness_logits[i].topk(50)
             print(pos_val)
             # pos_mask = pred_objectness_logits[i] >= 0.9
             pred.append(p[pos_mask])

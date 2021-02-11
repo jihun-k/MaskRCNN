@@ -43,8 +43,8 @@ def main():
     
     optimizer = torch.optim.SGD(model.rpn.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
 
-    train_image_count = 10
-    max_iteration = 800
+    train_image_count = 100
+    max_iteration = 1000
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=60000, gamma=0.1)
     
     model_name = "rpn " + str(datetime.datetime.now()) + ".pkl"
