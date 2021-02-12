@@ -173,10 +173,9 @@ class RPN(nn.Module):
 
             # protect against not enough positive examples
             num_pos = min(positive.numel(), 128)
-            # num_neg = 256 - num_pos
+            num_neg = 256 - num_pos
             # # protect against not enough negative examples
-            # num_neg = min(negative.numel(), num_neg)
-            num_neg = num_pos
+            num_neg = min(negative.numel(), num_neg)
 
             # randomly select positive and negative examples
             perm1 = torch.randperm(positive.numel(), device=positive.device)[:num_pos]
@@ -232,7 +231,7 @@ class RPN(nn.Module):
 
         return losses
 
-    def forward(self, images, features, gt_boxes):
+    def forward(self, images, features, annotations):
         '''
             Args:
                 images [b, c, w, h] : original images
@@ -250,6 +249,8 @@ class RPN(nn.Module):
                     GT vector: (x/r-dx_pred, y/r-dy_pred, log(w/r/w_pred), log(w/r/h_pred))
                         r : downsample ratio
         '''
+
+        gt_boxes = annotations["boxes"]
 
         proposals = []
         losses = []
@@ -278,6 +279,7 @@ class RPN(nn.Module):
             & (anchors_xyxy[..., 2] < images.shape[-1])
             & (anchors_xyxy[..., 3] < images.shape[-1])
         )
+        idx_inside = box_util.inside_box(anchors_xyxy, annotations["image_size"][0])
         anchors = anchors[idx_inside]
         pred_objectness_logits = pred_objectness_logits[:,idx_inside]
         pred_bbox_deltas = pred_bbox_deltas[:,idx_inside]
@@ -295,18 +297,10 @@ class RPN(nn.Module):
         proposals = box_util.apply_deltas(anchors, pred_bbox_deltas)
         proposals = box_util.cwh_to_xyxy(proposals)
 
-
-        '''
-        pred_objectness_logits = torch.cat(pred_objectness_logits, dim=1)
-        pos_mask = pred_objectness_logits >= 0.7
-        # pos_mask = pred_objectness_logits.topk(10)[1]
-        proposals = proposals[pos_mask]
-        # pos_original_anchor = torch.cat(anchors)[pos_mask]
-        # '''
         pred = []
         for i, p in enumerate(proposals):
-            pos_val, pos_mask = pred_objectness_logits[i].topk(50)
-            print(pos_val)
+            pos_val, pos_mask = pred_objectness_logits[i].topk(100)
+            # print(pos_val)
             # pos_mask = pred_objectness_logits[i] >= 0.9
             pred.append(p[pos_mask])
 

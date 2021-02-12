@@ -93,7 +93,7 @@ class Res50FPN(nn.Module):
                     layer_self = layer
                     
                 if layer_self in model_dict:
-                    param.requires_grad = False
+                    # param.requires_grad = False
                     model_dict.update({layer_self: param})
             self.load_state_dict(model_dict)
             

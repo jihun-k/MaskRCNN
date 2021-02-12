@@ -45,7 +45,7 @@ class MaskRCNN(GenerallizedRCNN):
         backbone = Res50FPN(imagenet_pretrained=True)
         # backbone = torchvision.models.resnet50(pretrained=True)
         # backbone = torch.nn.Sequential(*(list(backbone.children())[:-2]))
-        backbone.eval()
+        # backbone.eval()
 
         rpn = RPN(cfg)
         rpn.train()

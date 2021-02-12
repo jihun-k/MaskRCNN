@@ -81,5 +81,9 @@ class CocoDataset(Dataset):
             # boxes[:,2] += boxes[:,0]
             # boxes[:,3] += boxes[:,1]
             boxes = boxes * scale
+
+        image_size = torch.tensor([w*scale, h*scale])
+
+        annotations = {"boxes": boxes, "labels": labels, "image_size": image_size}
         
-        return image, boxes, labels
+        return image, annotations

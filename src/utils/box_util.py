@@ -131,3 +131,12 @@ def apply_deltas(anchors, deltas):
     xywh[...,2] = torch.exp(deltas[...,2]) * anchors[...,2]
     xywh[...,3] = torch.exp(deltas[...,3]) * anchors[...,3]
     return xywh
+
+def inside_box(anchors, image_size):
+    inside_box = (
+        (anchors[..., 0] >= 0)
+        & (anchors[..., 1] >= 0)
+        & (anchors[..., 2] < image_size[0])
+        & (anchors[..., 3] < image_size[1])
+    )
+    return inside_box
