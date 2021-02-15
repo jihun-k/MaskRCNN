@@ -1,4 +1,6 @@
+import torch
 import torch.nn as nn
+import torchvision
 from PIL import Image
 from torchvision import transforms
 
@@ -23,7 +25,6 @@ class GenerallizedRCNN(nn.Module):
                 targets (List(boxes))
         '''
         features = self.backbone(images)
-
         proposals, proposal_losses = self.rpn(images, features, targets)
         # detections, detector_losses = self.roi_heads(features, proposals, targets)
 
@@ -42,7 +43,10 @@ class MaskRCNN(GenerallizedRCNN):
             
         )
         backbone = Res50FPN(imagenet_pretrained=True)
-        backbone.eval()
+        # backbone = torchvision.models.resnet50(pretrained=True)
+        # backbone = torch.nn.Sequential(*(list(backbone.children())[:-2]))
+        # backbone.eval()
+
         rpn = RPN(cfg)
         rpn.train()
         roi_heads = RoIHead()

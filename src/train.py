@@ -1,3 +1,4 @@
+import datetime
 import os
 
 import torch
@@ -8,6 +9,7 @@ from torchvision import transforms
 import models
 from config import ROOT_DIR
 from data import coco
+from utils import box_util
 from utils.transforms import ResizeSquare
 
 
@@ -23,8 +25,8 @@ def main():
     writer = SummaryWriter()
 
     # create dataloader
-    imgpath = os.path.join(ROOT_DIR, "datasets", "COCO", "train2017")
-    jsonpath = os.path.join(ROOT_DIR, "datasets", "COCO", "annotations", "instances_train2017.json")
+    imgpath = os.path.join(ROOT_DIR, "datasets", "COCO", "val2017")
+    jsonpath = os.path.join(ROOT_DIR, "datasets", "COCO", "annotations", "instances_val2017.json")
 
     train_set = coco.CocoDataset(imgpath,
                                  jsonpath, 
@@ -39,38 +41,67 @@ def main():
     model = models.MaskRCNN(writer)
     model.to(device)
     
-    optimizer = torch.optim.SGD(model.rpn.parameters(), lr=0.01, momentum=0.9)
-    # TODO lr scheduler
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 100)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
 
-    model.train()
+    image_save_interval = 40
+    train_image_count = 100
+    max_iteration = 80000 / train_image_count
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=60000, gamma=0.1)
     
-    for epoch in range(1000):
-        print(epoch, "epoch")
-        for i, (image, boxes, labels) in enumerate(train_loader):
+    model_path = "rpn " + str(datetime.datetime.now())
+    model_path = os.path.join(ROOT_DIR, "save", model_path)
+    if not os.path.exists(model_path):
+        os.mkdir(model_path)
+    model_name = "rpn.pkl"
 
-            image, boxes = image.to(device), boxes.to(device)
+    # model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "models", model_name)))
+
+    i_mini_batch = 0
+    for iter in range(max_iteration):
+        print(iter, "epoch")
+        i = 0
+        for _, (image, annotations) in enumerate(train_loader):
+            # to device
+            image = image.to(device)
+            
+            for k, v in annotations.items():
+                if torch.is_tensor(v):
+                    annotations.update({k: v.to(device)})
+
+            boxes = annotations["boxes"]
+            if boxes.numel() == 0:
+                continue
+
+            # if iter==0:
+            #     writer.add_image_with_boxes("GT/gt_"+str(i), image[0], box_util.xywh_to_xyxy(boxes[0]), global_step=iter)
+            #     writer.flush()
 
             model.train()
 
-            proposals, losses = model(image, boxes)
+            proposals, losses = model(image, annotations)
 
             print(i, losses)
-            if i % 1000 == 0:
-                writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], epoch)
-                writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], epoch)
-                writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0])
-                writer.flush()
-                model_name = "rpn_" + str(epoch) + "_" + str(i) + ".pkl"
-                torch.save(model.state_dict(), os.path.join(ROOT_DIR, "models", model_name))
-                
+            if iter != 0 and iter%image_save_interval == 0:
+                writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=iter)
+
 
             rpn_lambda = 10
-            losses = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
+            loss = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
 
             optimizer.zero_grad()
-            losses.backward()
+            loss.backward()
             optimizer.step()
+            scheduler.step()
+
+            if i == train_image_count-1:
+                writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], i_mini_batch)
+                writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], i_mini_batch)
+                writer.add_scalar("lr", optimizer.param_groups[0]["lr"], global_step=i_mini_batch)
+                writer.flush()
+                torch.save(model.state_dict(), os.path.join(model_path, model_name))
+                break
+            i += 1
+            i_mini_batch += 1
 
 if __name__ == "__main__":
     main()

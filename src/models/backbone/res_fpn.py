@@ -14,6 +14,9 @@ class Bottleneck(nn.Module):
         self.conv3 = nn.Conv2d(mid_channels, out_channels, kernel_size=1, stride=1, padding=0, bias=False)
         self.bn3 = nn.BatchNorm2d(out_channels, affine=False)
         self.relu = nn.ReLU(inplace=True)
+
+        for l in [self.conv1, self.conv2, self.conv3]:#, self.bn1, self.bn2, self.bn3]:
+            l.weight
         if conv_bypass:
             self.downsample = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=downsample_stride, bias=False),
@@ -78,6 +81,7 @@ class Res50FPN(nn.Module):
         self.fpn_maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
         if imagenet_pretrained:
+            
             pretrained_model = torchvision.models.resnet50(pretrained=True)
             pretrained_dict = pretrained_model.state_dict()
             model_dict = self.state_dict()
@@ -89,7 +93,7 @@ class Res50FPN(nn.Module):
                     layer_self = layer
                     
                 if layer_self in model_dict:
-                    param.requires_grad = False
+                    # param.requires_grad = False
                     model_dict.update({layer_self: param})
             self.load_state_dict(model_dict)
             

@@ -8,11 +8,12 @@ def xywh_to_xyxy(boxes):
         Returns:
             List([x1,y1,x2,y2])
     '''
-    orig_shape = boxes.shape
-    boxes.reshape((-1,4))
-    boxes[...,2] = boxes[...,0] + boxes[...,2]
-    boxes[...,3] = boxes[...,1] + boxes[...,3]
-    return boxes.reshape(orig_shape)
+    xyxy = torch.zeros(boxes.shape, device=boxes.device)
+    xyxy[...,0] = boxes[...,0]
+    xyxy[...,1] = boxes[...,1]
+    xyxy[...,2] = boxes[...,0] + boxes[...,2]
+    xyxy[...,3] = boxes[...,1] + boxes[...,3]
+    return xyxy
 
 def cwh_to_xywh(boxes):
     '''
@@ -21,11 +22,12 @@ def cwh_to_xywh(boxes):
         Returns:
             List([x,y,w,h])
     '''
-    orig_shape = boxes.shape
-    boxes.reshape((-1,4))
-    boxes[..., 0] = boxes[...,0] - boxes[...,2] / 2
-    boxes[..., 1] = boxes[...,1] - boxes[...,3] / 2
-    return boxes.reshape(orig_shape)
+    xywh = torch.zeros(boxes.shape, device=boxes.device)
+    xywh[...,0] = boxes[...,0] - boxes[...,2] / 2
+    xywh[...,1] = boxes[...,1] - boxes[...,3] / 2
+    xywh[...,2] = boxes[...,2]
+    xywh[...,3] = boxes[...,3]
+    return xywh
 
 def cwh_to_xyxy(boxes):
     '''
@@ -34,13 +36,12 @@ def cwh_to_xyxy(boxes):
         Returns:
             List([x1,y1,x2,y2])
     '''
-    orig_shape = boxes.shape
-    boxes = boxes.reshape((-1,4))
-    x1 = boxes[...,0] - boxes[...,2] / 2
-    y1 = boxes[...,1] - boxes[...,3] / 2
-    x2 = boxes[...,0] + boxes[...,2] / 2
-    y2 = boxes[...,1] + boxes[...,3] / 2
-    return torch.stack((x1, y1, x2, y2)).permute(1,0).reshape(orig_shape)
+    xyxy = torch.zeros(boxes.shape, device=boxes.device)
+    xyxy[...,0] = boxes[...,0] - boxes[...,2] / 2
+    xyxy[...,1] = boxes[...,1] - boxes[...,3] / 2
+    xyxy[...,2] = boxes[...,0] + boxes[...,2] / 2
+    xyxy[...,3] = boxes[...,1] + boxes[...,3] / 2
+    return xyxy
 
 def xyxy_to_cxy(boxes):
     '''
@@ -49,25 +50,28 @@ def xyxy_to_cxy(boxes):
         Returns:
             List([cx,cy,w,h])
     '''
-    cx = (boxes[...,0] + boxes[...,2]) / 2
-    cy = (boxes[...,1] + boxes[...,3]) / 2
-    w = boxes[...,2] - boxes[...,0]
-    h = boxes[...,3] - boxes[...,1]
-    return torch.stack((cx,cy,w,h)).permute(1,0)
+    cxy = torch.zeros(boxes.shape, device=boxes.device)
+    cxy[...,0] = (boxes[...,0] + boxes[...,2]) / 2
+    cxy[...,1] = (boxes[...,1] + boxes[...,3]) / 2
+    cxy[...,2] = boxes[...,2] - boxes[...,0]
+    cxy[...,3] = boxes[...,3] - boxes[...,1]
+    return cxy
 
-def intersection(boxes1, boxes2):
+def intersection(src, target):
     '''
-        return intersection (x1, y1, x2, y2) of box1 and box2
+        return intersection (x1, y1, x2, y2) of src and target
         Args:
-            List([x1, y1, x2, y2])
+            src [N, 4]
+            target [4]
+        Returns:
+            intersection [N, 4]
     '''
-    orig_shape = boxes1.shape
-    boxes1, boxes2 = boxes1.reshape((-1,4)), boxes2.reshape((-1,4))
-    x1 = torch.max(boxes1[...,0], boxes2[...,0])
-    y1 = torch.max(boxes1[...,1], boxes2[...,1])
-    x2 = torch.min(boxes1[...,2], boxes2[...,2])
-    y2 = torch.min(boxes1[...,3], boxes2[...,3])
-    return torch.stack((x1, y1, x2, y2)).permute(1,0).reshape(orig_shape)
+    i = torch.zeros(src.shape, device=src.device)
+    i[...,0] = torch.max(src[...,0], target[0])
+    i[...,1] = torch.max(src[...,1], target[1])
+    i[...,2] = torch.min(src[...,2], target[2])
+    i[...,3] = torch.min(src[...,3], target[3])
+    return i
 
 def get_iou(anchors, targets):
     '''
@@ -121,8 +125,18 @@ def apply_deltas(anchors, deltas):
             [N, 4]
                 (cx, cy, w, h)
     '''
-    x = anchors[...,0] + deltas[...,0] * anchors[...,2]
-    y = anchors[...,1] + deltas[...,1] * anchors[...,3]
-    w = torch.exp(deltas[...,2]) * anchors[...,2]
-    h = torch.exp(deltas[...,3]) * anchors[...,3]
-    return torch.stack((x, y, w, h), dim=1).permute(0, 2, 1)
+    xywh = torch.zeros(deltas.shape, device=anchors.device)
+    xywh[...,0] = anchors[...,0] + deltas[...,0] * anchors[...,2]
+    xywh[...,1] = anchors[...,1] + deltas[...,1] * anchors[...,3]
+    xywh[...,2] = torch.exp(deltas[...,2]) * anchors[...,2]
+    xywh[...,3] = torch.exp(deltas[...,3]) * anchors[...,3]
+    return xywh
+
+def inside_box(anchors, image_size):
+    inside_box = (
+        (anchors[..., 0] >= 0)
+        & (anchors[..., 1] >= 0)
+        & (anchors[..., 2] < image_size[0])
+        & (anchors[..., 3] < image_size[1])
+    )
+    return inside_box
