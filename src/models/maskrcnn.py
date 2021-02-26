@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision
+from config import Config
 from PIL import Image
 from torchvision import transforms
 
@@ -37,18 +38,14 @@ class GenerallizedRCNN(nn.Module):
 
 class MaskRCNN(GenerallizedRCNN):
     ''' mask r cnn '''
-    def __init__(self, cfg):
+    def __init__(self, cfg: Config):
         transform = transforms.Compose(
             transforms.Resize(1024, interpolation=Image.BILINEAR)
             
         )
-        backbone = Res50FPN(imagenet_pretrained=True)
-        # backbone = torchvision.models.resnet50(pretrained=True)
-        # backbone = torch.nn.Sequential(*(list(backbone.children())[:-2]))
-        # backbone.eval()
+        backbone = Res50FPN(cfg)
 
         rpn = RPN(cfg)
-        rpn.train()
         roi_heads = RoIHead()
 
         super(MaskRCNN, self).__init__(backbone, rpn, roi_heads, transform)

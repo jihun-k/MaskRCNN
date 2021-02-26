@@ -69,7 +69,7 @@ class CocoDataset(Dataset):
         labels = []
 
         for item in self.annotlist[idx]:
-            if item["iscrowd"] == 0 and item["category_id"] == 1:
+            # if item["iscrowd"] == 0 and item["category_id"] == 1:
                 labels.append(item["category_id"])
                 boxes.append(item["bbox"])
 

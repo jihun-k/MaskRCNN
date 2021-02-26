@@ -37,25 +37,25 @@ def main():
     cfg = Config(name_prefix="train ")
     cfg.backbone_init_imagenet = True
 
-    model = models.MaskRCNN(cfg)
-    model.to(device)
     
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
-
-    image_save_interval = 40
     train_image_count = 60000
     max_iteration = int(80000 / train_image_count)
     max_iteration = 2
     image_save_count = 100
+
+    model = models.MaskRCNN(cfg)
+    model.to(device)
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=60000, gamma=0.1)
-    
-    model_path = "rpn " + cfg.name
+
+    model_path = "rpn 2021-02-15 14:38:12.256264"
     model_path = os.path.join(ROOT_DIR, "save", model_path)
     if not os.path.exists(model_path):
-        os.mkdir(model_path)
+        print("model not exist")
+        return
     model_name = "rpn.pkl"
 
-    # model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "models", model_name)))
+    model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "models", model_name)))
 
     i_mini_batch = 0
     for iter in range(max_iteration):

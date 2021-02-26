@@ -1,8 +1,10 @@
 import math
+from typing import List
 
 import torch
 import torch.nn.functional as F
-from torch import nn
+import torchvision
+from torch import device, nn
 from utils import box_util
 
 
@@ -106,9 +108,13 @@ class RPN(nn.Module):
         self.num_anchors = len(self.sizes) * len(self.aspect_ratios)
         self.head = RPNHead(in_channels=256, num_anchors=self.num_anchors)
         self.anchor_generator = AnchorGenerator(self.sizes, self.aspect_ratios)
-        self.writer = cfg
+        self.writer = cfg.writer
 
-    def label_anchors(self, anchors, gt_boxes, images):
+    def label_anchors(
+        self,
+        anchors: List[torch.Tensor],
+        gt_boxes: torch.Tensor,
+        images):
         '''
             Args:
                 anchors [b, num_total_anchors, 4]: single tensor of all anchors from features. (cwh)
@@ -231,6 +237,48 @@ class RPN(nn.Module):
 
         return losses
 
+    def nms(self, proposals, scores, num_anchors_in_levels):
+        level_scores = []
+        level_proposals = []
+        start_idx = 0
+
+        nms_threshold = 0.7
+        pre_nms_topk = 1000
+        post_nms_topk = 100
+
+        # topk proposals from each feature level
+        for n in num_anchors_in_levels:
+            proposals_lvl = proposals[:,start_idx:start_idx+n]
+            scores_lvl = scores[:,start_idx:start_idx+n]
+            start_idx += n
+
+            num_proposals_lvl = min(n, pre_nms_topk) # 1000 anchors per each level
+
+            scores_lvl, idx = torch.sort(scores_lvl, dim=1, descending=True)
+            topk_scores_lvl = torch.narrow(scores_lvl, 1, 0, num_proposals_lvl)
+            idx = torch.narrow(idx, 1, 0, num_proposals_lvl)
+            topk_proposals_lvl = torch.zeros([idx.shape[0], idx.shape[1], 4], device=idx.device)
+            for i, topk_idx_image in enumerate(idx):
+                topk_proposals_lvl[i] = proposals_lvl[i, topk_idx_image]
+
+            level_scores.append(topk_scores_lvl)
+            level_proposals.append(topk_proposals_lvl)
+
+        # concat all levels
+        scores = torch.cat(level_scores, dim=1)
+        proposals = torch.cat(level_proposals, dim=1)
+
+        # nms for each image in batch
+        nms_proposals = []
+        for scores_i, proposals_i in zip(scores, proposals):
+            keep_idx = torchvision.ops.nms(proposals_i, scores_i, nms_threshold)
+            proposals_i = proposals_i[keep_idx]
+            proposals_i = proposals_i[:post_nms_topk]
+            nms_proposals.append(proposals_i)
+            # print(proposals_i[keep_idx].shape)
+            
+        return nms_proposals
+
     def forward(self, images, features, annotations):
         '''
             Args:
@@ -252,7 +300,6 @@ class RPN(nn.Module):
 
         gt_boxes = annotations["boxes"]
 
-        proposals = []
         losses = []
 
         # generate anchors
@@ -263,26 +310,36 @@ class RPN(nn.Module):
         
         pred_objectness_logits = [ # reshape [b, A, w, h] -> [b, Awh]
             cls.permute(0, 2, 3, 1).reshape((cls.shape[0], -1)) for cls in pred_objectness_logits]
-        pred_bbox_deltas = [ #  reshape [b, 4A, w, h] -> [b, 4Awh, 4A] (delta)
+        pred_bbox_deltas = [ #  reshape [b, 4A, w, h] -> [b, Awh, 4] (delta)
             box.permute(0, 2, 3, 1).reshape((box.shape[0], -1, 4)) for box in pred_bbox_deltas]
+
+        # out-of-image anchors
+        # TODO include out-of-image anchors in test
+        # num_anchors_in_levels = []
+        for i, (lvl_anchor, lvl_cls, lvl_box) in enumerate(zip(anchors, pred_objectness_logits, pred_bbox_deltas)):
+            idx_inside = box_util.inside_box(box_util.cwh_to_xyxy(lvl_anchor), (1024, 1024))
+            anchors[i] = lvl_anchor[idx_inside]
+            pred_objectness_logits[i] = lvl_cls[:, idx_inside]
+            pred_bbox_deltas[i] = lvl_box[:, idx_inside]
+            # num_anchors_in_levels.append(len(anchors[i]))
 
         # list of tensors for features -> single tensor
         anchors = torch.cat(anchors)
         pred_objectness_logits = torch.cat(pred_objectness_logits, dim=1)
         pred_bbox_deltas = torch.cat(pred_bbox_deltas, dim=1)
 
-        # out-of-image anchors
-        anchors_xyxy = box_util.cwh_to_xyxy(anchors)
-        idx_inside = (
-            (anchors_xyxy[..., 0] >= 0)
-            & (anchors_xyxy[..., 1] >= 0)
-            & (anchors_xyxy[..., 2] < images.shape[-1])
-            & (anchors_xyxy[..., 3] < images.shape[-1])
-        )
-        idx_inside = box_util.inside_box(anchors_xyxy, annotations["image_size"][0])
-        anchors = anchors[idx_inside]
-        pred_objectness_logits = pred_objectness_logits[:,idx_inside]
-        pred_bbox_deltas = pred_bbox_deltas[:,idx_inside]
+        # # out-of-image anchors
+        # anchors_xyxy = box_util.cwh_to_xyxy(anchors)
+        # idx_inside = (
+        #     (anchors_xyxy[..., 0] >= 0)
+        #     & (anchors_xyxy[..., 1] >= 0)
+        #     & (anchors_xyxy[..., 2] < images.shape[-1])
+        #     & (anchors_xyxy[..., 3] < images.shape[-1])
+        # )
+        # # idx_inside = box_util.inside_box(anchors_xyxy, annotations["image_size"][0])
+        # anchors = anchors[idx_inside]
+        # pred_objectness_logits = pred_objectness_logits[:,idx_inside]
+        # pred_bbox_deltas = pred_bbox_deltas[:,idx_inside]
         
         if self.training:
             # label and sample anchors [N], [N, 4] (xyxy)
@@ -297,13 +354,12 @@ class RPN(nn.Module):
         proposals = box_util.apply_deltas(anchors, pred_bbox_deltas)
         proposals = box_util.cwh_to_xyxy(proposals)
 
+        # TODO nms
+        # pred = self.nms(proposals, pred_objectness_logits, num_anchors_in_levels)
+
         pred = []
         for i, p in enumerate(proposals):
             pos_val, pos_mask = pred_objectness_logits[i].topk(100)
-            # print(pos_val)
-            # pos_mask = pred_objectness_logits[i] >= 0.9
             pred.append(p[pos_mask])
-
-        # TODO NMS
 
         return pred, losses
