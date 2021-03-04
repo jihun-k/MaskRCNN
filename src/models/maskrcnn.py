@@ -1,3 +1,5 @@
+from typing import Dict
+
 import torch
 import torch.nn as nn
 import torchvision
@@ -12,14 +14,22 @@ from models.roi_head.roi_head import RoIHead
 
 class GenerallizedRCNN(nn.Module):
     ''' generalized rcnn '''
-    def __init__(self, backbone, rpn, roi_heads, transform):
+    def __init__(
+            self,
+            backbone,
+            rpn,
+            roi_heads
+        ):
         super(GenerallizedRCNN, self).__init__()
-        self.transform = transform
         self.backbone = backbone
         self.rpn = rpn
         self.roi_heads = roi_heads
 
-    def forward(self, images, targets):
+    def forward(
+            self,
+            images: torch.Tensor,
+            targets: Dict[str, torch.Tensor]
+        ):
         '''
             Args:
                 images  ([b, c, w, h])
@@ -27,7 +37,7 @@ class GenerallizedRCNN(nn.Module):
         '''
         features = self.backbone(images)
         proposals, proposal_losses = self.rpn(images, features, targets)
-        # detections, detector_losses = self.roi_heads(features, proposals, targets)
+        detections, detector_losses = self.roi_heads(features, proposals, targets)
 
         losses = {}
         # losses.update(detector_losses)
@@ -39,13 +49,9 @@ class GenerallizedRCNN(nn.Module):
 class MaskRCNN(GenerallizedRCNN):
     ''' mask r cnn '''
     def __init__(self, cfg: Config):
-        transform = transforms.Compose(
-            transforms.Resize(1024, interpolation=Image.BILINEAR)
-            
-        )
         backbone = Res50FPN(cfg)
 
         rpn = RPN(cfg)
         roi_heads = RoIHead()
 
-        super(MaskRCNN, self).__init__(backbone, rpn, roi_heads, transform)
+        super(MaskRCNN, self).__init__(backbone, rpn, roi_heads)

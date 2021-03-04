@@ -20,24 +20,29 @@ def main():
         print(device)
         
     # create dataloader
-    imgpath = os.path.join(ROOT_DIR, "datasets", "COCO", "val2017")
-    jsonpath = os.path.join(ROOT_DIR, "datasets", "COCO", "annotations", "instances_val2017.json")
+    # dataset_name = "train2017"
+    dataset_name = "val2017"
+    imgpath = os.path.join(ROOT_DIR, "datasets", "COCO", dataset_name)
+    jsonpath = os.path.join(ROOT_DIR, "datasets", "COCO", "annotations", "instances_" + dataset_name + ".json")
 
-    train_set = coco.CocoDataset(imgpath,
-                                 jsonpath, 
-                                 transforms.Compose([
-                                    ResizeSquare(1024),
-                                    transforms.ToTensor(),
-                                    # transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                    #     std=[0.229, 0.224, 0.225]),
-                                ]))
-    train_loader = DataLoader(train_set, batch_size=1)
+    train_set = coco.CocoDataset(
+        imgpath,
+        jsonpath, 
+        device=device,
+        transform=transforms.Compose([
+            ResizeSquare(1024),
+            transforms.ToTensor(),
+            # transforms.Normalize(mean=[0.485, 0.456, 0.406],
+            #     std=[0.229, 0.224, 0.225]),
+        ]),
+    )
+    train_loader = DataLoader(train_set, batch_size=1, collate_fn=coco.coco_collate)
 
     cfg = Config(name_prefix="test ")
     model = models.MaskRCNN(cfg)
     model.to(device)
     
-    model_path = "rpn 2021-02-15 14:38:12.256264"
+    model_path = "rpn train 2021-03-04 17:07:36.358205"
     model_path = os.path.join(ROOT_DIR, "save", model_path)
     if not os.path.exists(model_path):
         print("model not exist")
@@ -50,25 +55,12 @@ def main():
     test_image_count = 110
     
     for iter in range(1):
-        i = 0
-        for _, (image, annotations) in enumerate(train_loader):
-            # to device
-            image = image.to(device)
-            
-            for k, v in annotations.items():
-                if torch.is_tensor(v):
-                    annotations.update({k: v.to(device)})
-
-            boxes = annotations["boxes"]
-            if boxes.numel() == 0:
-                continue
-
+        for i, (image, annotations) in enumerate(train_loader):
 
             proposals, losses = model(image, annotations)
 
-            print(i, len(proposals[0]))
-
-            cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=iter)
+            proposal_img0 = torch.cat([x[0] for x in proposals])
+            cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
             cfg.writer.flush()
 
             if i >= test_image_count:

@@ -7,9 +7,13 @@ ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 
 
 class Config():
-    def __init__(self, name_prefix=""):
+    def __init__(
+        self,
+        name_prefix=""
+    ):
         self.name = name_prefix + str(datetime.datetime.now())
         self.writer = SummaryWriter(os.path.join("runs", self.name))
         self.backbone_init_imagenet = False
+        self.batch_size = 1
         return
 

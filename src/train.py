@@ -20,66 +20,60 @@ def main():
     else:
         device = torch.device("cpu")
         print(device)
-        
-    imgpath = os.path.join(ROOT_DIR, "datasets", "COCO", "train2017")
-    jsonpath = os.path.join(ROOT_DIR, "datasets", "COCO", "annotations", "instances_train2017.json")
-
-    train_set = coco.CocoDataset(imgpath,
-                                 jsonpath, 
-                                 transforms.Compose([
-                                    ResizeSquare(1024),
-                                    transforms.ToTensor(),
-                                    # transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                    #     std=[0.229, 0.224, 0.225]),
-                                ]))
-    train_loader = DataLoader(train_set, batch_size=1)
 
     cfg = Config(name_prefix="train ")
     cfg.backbone_init_imagenet = True
+    cfg.batch_size = 1
+
+        
+    # dataset_name = "train2017"
+    dataset_name = "val2017"
+    imgpath = os.path.join(ROOT_DIR, "datasets", "COCO", dataset_name)
+    jsonpath = os.path.join(ROOT_DIR, "datasets", "COCO", "annotations", "instances_" + dataset_name + ".json")
+    train_set = coco.CocoDataset(
+        imgpath,
+        jsonpath,
+        device=device,
+        transform=transforms.Compose([
+        ResizeSquare(1024),
+        transforms.ToTensor(),
+    ]))
+    train_loader = DataLoader(train_set, batch_size=cfg.batch_size, collate_fn=coco.coco_collate)
+
+    # train_image_count = len(train_set)
+    train_image_count = 100
+    max_iteration = 800
+    image_save_count = 100
+    image_save_interval = int(train_image_count / image_save_count)
 
     model = models.MaskRCNN(cfg)
     model.to(device)
     
     optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0005)
 
-    image_save_interval = 40
-    train_image_count = 60000
-    max_iteration = int(80000 / train_image_count)
-    max_iteration = 2
-    image_save_count = 100
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=60000, gamma=0.1)
+    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[60000], gamma=0.1)
     
     model_path = "rpn " + cfg.name
     model_path = os.path.join(ROOT_DIR, "save", model_path)
-    if not os.path.exists(model_path):
-        os.mkdir(model_path)
     model_name = "rpn.pkl"
 
     # model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "models", model_name)))
-
     i_mini_batch = 0
     for iter in range(max_iteration):
         print(iter, "epoch")
-        i = 0
-        for _, (image, annotations) in enumerate(train_loader):
-            image = image.to(device)
-            
-            for k, v in annotations.items():
-                if torch.is_tensor(v):
-                    annotations.update({k: v.to(device)})
-
-            boxes = annotations["boxes"]
-            if boxes.numel() == 0:
-                continue
+        for i, (image, annotations) in enumerate(train_loader):
 
             model.train()
 
             proposals, losses = model(image, annotations)
 
             print(i, losses)
-            # if iter != 0 and iter%image_save_interval == 0 or iter == max_iteration-1:
-            if i % (train_image_count / image_save_count) == 0:
-                    cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=iter)
+            if i % image_save_interval == 0:
+                proposal_img0 = torch.cat([x[0] for x in proposals])
+                cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
+                if iter == 0:
+                    # gt
+                    cfg.writer.add_image_with_boxes("GT/gt_"+str(i), image[0], box_util.xywh_to_xyxy(annotations[0]["boxes"]))
 
 
             rpn_lambda = 10
@@ -97,9 +91,11 @@ def main():
 
             i_mini_batch += 1
             if i_mini_batch % 1000 == 0:
+                if not os.path.exists(model_path):
+                    os.mkdir(model_path)
                 torch.save(model.state_dict(), os.path.join(model_path, model_name))
-            i += 1
-            if i == train_image_count:
+
+            if i == train_image_count-1:
                 break
     
     torch.save(model.state_dict(), os.path.join(model_path, model_name))
