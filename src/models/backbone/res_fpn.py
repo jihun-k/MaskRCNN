@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torchvision
+from config import Config
 
 
 class Bottleneck(nn.Module):
@@ -54,7 +55,7 @@ class ResBlock(nn.Module):
 
 class Res50FPN(nn.Module):
     ''' backbone resnet '''
-    def __init__(self, imagenet_pretrained=False):
+    def __init__(self, cfg:Config):
         super(Res50FPN, self).__init__()
 
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
@@ -80,7 +81,7 @@ class Res50FPN(nn.Module):
         self.fpn_upsample = nn.Upsample(scale_factor=(2,2),)
         self.fpn_maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        if imagenet_pretrained:
+        if cfg.backbone_init_imagenet:
             
             pretrained_model = torchvision.models.resnet50(pretrained=True)
             pretrained_dict = pretrained_model.state_dict()

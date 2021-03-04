@@ -22,8 +22,9 @@ def main():
         device = torch.device("cpu")
         print(device)
 
-    cfg = Config(name_prefix="train ")
+    cfg = Config(name_prefix="head train ")
     cfg.backbone_init_imagenet = True
+    cfg.freeze_rpn = True
     cfg.batch_size = 1
 
         
@@ -55,11 +56,12 @@ def main():
 
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[60000], gamma=0.1)
     
-    model_path = "rpn " + cfg.name
+    model_path = cfg.name
     model_path = os.path.join(ROOT_DIR, "save", model_path)
-    model_name = "rpn.pkl"
+    model_name = "mascrcnn.pkl"
 
-    # model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "models", model_name)))
+    model.load_state_dict(torch.load(os.path.join(ROOT_DIR, "save/rpn train 2021-03-04 23:14:22.924653/rpn.pkl")))
+    
     i_mini_batch = 0
     for iter in range(max_iteration):
         print(iter, "epoch")
@@ -67,28 +69,27 @@ def main():
 
             model.train()
 
-            proposals, losses = model(image, annotations)
+            detections, losses = model(image, annotations)
 
             print(i, losses)
             if i % (int(train_image_count / image_save_count)) == 0:
                 if iter % image_save_interval == 0:
-                    proposal_img0 = torch.cat([x[0] for x in proposals])
-                    cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
+                    cfg.writer.add_image_with_boxes("Image/detection_"+str(i), image[0], detections["boxes"], global_step=iter)
                 # if iter == 0:
                 #     # gt
                 #     cfg.writer.add_image_with_boxes("GT/gt_"+str(i), image[0], box_util.xywh_to_xyxy(annotations[0]["boxes"]))
 
 
             rpn_lambda = 10
-            loss = losses["loss_rpn_cls"] + rpn_lambda * losses["loss_rpn_box"]
+            loss = losses["loss_head_cls"] + rpn_lambda * losses["loss_head_box"]
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             scheduler.step()
 
-            cfg.writer.add_scalar("Loss/classification", losses["loss_rpn_cls"], i_mini_batch)
-            cfg.writer.add_scalar("Loss/bbox_regression", losses["loss_rpn_box"], i_mini_batch)
+            cfg.writer.add_scalar("Loss/classification", losses["loss_head_cls"], i_mini_batch)
+            cfg.writer.add_scalar("Loss/bbox_regression", losses["loss_head_box"], i_mini_batch)
             cfg.writer.add_scalar("lr", optimizer.param_groups[0]["lr"], global_step=i_mini_batch)
             cfg.writer.flush()
 
