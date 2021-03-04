@@ -125,7 +125,6 @@ class RPN(nn.Module):
         self,
         anchors: torch.Tensor,
         gt_boxes: List[torch.Tensor],
-        images
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
             Args:
@@ -144,6 +143,7 @@ class RPN(nn.Module):
                     i-th element is a Rx4 tensor. The values are the matched gt boxes for each
                     anchor. Values are undefined for those anchors not labeled as 1.
         '''
+        anchors_xyxy = box_util.cwh_to_xyxy(anchors)
         
         pos_threshold = 0.7
         neg_threshold = 0.3
@@ -153,13 +153,13 @@ class RPN(nn.Module):
         for gt_boxes_i in gt_boxes: # i th image in batch
             if torch.numel(gt_boxes_i) == 0:
                 # all negative
-                gt_labels_i = torch.ones(anchors.shape[0], device=anchors.device) * -1
-                matched_gt_boxes_i = torch.zeros(anchors.shape, device=anchors.device)
+                gt_labels_i = torch.ones(anchors_xyxy.shape[0], device=anchors_xyxy.device) * -1
+                matched_gt_boxes_i = torch.zeros(anchors_xyxy.shape, device=anchors_xyxy.device)
             else:
                 gt_boxes_i = box_util.xywh_to_xyxy(gt_boxes_i)
 
                 # (num_total_anchor) * (num_gt_box) match quality matrix 
-                iou_matrix = box_util.get_iou(anchors, gt_boxes_i)
+                iou_matrix = box_util.get_iou(anchors_xyxy, gt_boxes_i)
 
                 matched_gt_score, matched_gt_idx = torch.max(iou_matrix, dim=1)
                 matched_gt_boxes_i = gt_boxes_i[matched_gt_idx]
@@ -172,7 +172,7 @@ class RPN(nn.Module):
                 pos_idx_b = torch.max(iou_matrix, dim=0)[1] # maximum iou for each gt box
                 pos_idx = torch.cat((pos_idx_a, pos_idx_b)).unique()
                 
-                gt_labels_i = torch.ones(anchors.shape[0], device=anchors.device) * -1
+                gt_labels_i = torch.ones(anchors_xyxy.shape[0], device=anchors_xyxy.device) * -1
                 gt_labels_i[neg_idx] = 0
                 gt_labels_i[pos_idx] = 1
 
@@ -181,7 +181,7 @@ class RPN(nn.Module):
 
         return gt_labels, matched_gt_boxes
 
-    def sample_anchors(self, anchors, gt_labels, images):
+    def sample_anchors(self, gt_labels):
         for gt_label in gt_labels:
             
             positive = torch.where(gt_label == 1)[0]
@@ -342,8 +342,8 @@ class RPN(nn.Module):
             bbox_from_all_level = bbox_from_all_level[:, idx_inside]
 
             # label and sample anchors [N], [N, 4] (xyxy)
-            gt_labels, gt_boxes = self.label_anchors(anchors_from_all_level, gt_boxes, images)
-            gt_labels = self.sample_anchors(anchors_from_all_level, gt_labels, images)
+            gt_labels, gt_boxes = self.label_anchors(anchors_from_all_level, gt_boxes)
+            gt_labels = self.sample_anchors(gt_labels)
 
             # loss
             losses = self.compute_loss(
@@ -357,6 +357,8 @@ class RPN(nn.Module):
 
         # TODO nms
         # pred = self.nms(proposals, pred_objectness_logits, num_anchors_in_levels)
+
+        # topk per feature
         pred = [] # List[List[Tensor]] (feature, image)
         for feature_proposal, feature_score in zip(proposals, pred_objectness_logits):
             pred_feature = []
@@ -364,5 +366,11 @@ class RPN(nn.Module):
                 pos_val, pos_mask = score_i.topk(20)
                 pred_feature.append(prop_i[pos_mask])
             pred.append(pred_feature)
+
+        # topk all
+        # pred = torch.cat(proposals, dim=1)
+        # scores = torch.cat(pred_objectness_logits, dim=1)
+        # pos_val, pos_mask = scores.topk(50)
+        # pred = pred[0][pos_mask]
 
         return pred, losses
