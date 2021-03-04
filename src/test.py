@@ -60,7 +60,8 @@ def main():
             proposals, losses = model(image, annotations)
 
             proposal_img0 = torch.cat([x[0] for x in proposals])
-            cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
+            # cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
+            cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposals[0], global_step=iter)
             cfg.writer.flush()
 
             if i >= test_image_count:

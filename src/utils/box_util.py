@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 import torch
 
 
@@ -14,6 +16,20 @@ def xywh_to_xyxy(boxes):
     xyxy[...,2] = boxes[...,0] + boxes[...,2]
     xyxy[...,3] = boxes[...,1] + boxes[...,3]
     return xyxy
+
+def xywh_to_cxy(boxes):
+    '''
+        Args:
+            Tensor [..., 4] (x, y, w, h)
+        Returns:
+            Tensor [..., 4] (cx, cy, w, h)
+    '''
+    cxy = torch.zeros(boxes.shape, device=boxes.device)
+    cxy[...,0] = boxes[...,0] + boxes[...,2] / 2
+    cxy[...,1] = boxes[...,1] + boxes[...,3] / 2
+    cxy[...,2] = boxes[...,2]
+    cxy[...,3] = boxes[...,3]
+    return cxy
 
 def cwh_to_xywh(boxes):
     '''

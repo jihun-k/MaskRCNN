@@ -1,5 +1,6 @@
 import datetime
 import os
+import shutil
 
 import torch
 from torch.utils.data import DataLoader
@@ -45,6 +46,7 @@ def main():
     max_iteration = 800
     image_save_count = 100
     image_save_interval = int(train_image_count / image_save_count)
+    image_save_interval = 40
 
     model = models.MaskRCNN(cfg)
     model.to(device)
@@ -68,12 +70,13 @@ def main():
             proposals, losses = model(image, annotations)
 
             print(i, losses)
-            if i % image_save_interval == 0:
-                proposal_img0 = torch.cat([x[0] for x in proposals])
-                cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
-                if iter == 0:
-                    # gt
-                    cfg.writer.add_image_with_boxes("GT/gt_"+str(i), image[0], box_util.xywh_to_xyxy(annotations[0]["boxes"]))
+            if i % (int(train_image_count / image_save_count)) == 0:
+                if iter % image_save_interval == 0:
+                    proposal_img0 = torch.cat([x[0] for x in proposals])
+                    cfg.writer.add_image_with_boxes("Image/proposal_"+str(i), image[0], proposal_img0, global_step=iter)
+                # if iter == 0:
+                #     # gt
+                #     cfg.writer.add_image_with_boxes("GT/gt_"+str(i), image[0], box_util.xywh_to_xyxy(annotations[0]["boxes"]))
 
 
             rpn_lambda = 10
