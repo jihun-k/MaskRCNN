@@ -56,13 +56,13 @@ class GenerallizedRCNN(nn.Module):
         else:
             proposals, proposal_losses = self.rpn(images, features, gt_boxes)
 
-        detections, detector_losses = self.roi_heads(features, proposals, gt_boxes, gt_labels)
+        # detections, detector_losses = self.roi_heads(features, proposals, gt_boxes, gt_labels)
 
         losses = {}
-        losses.update(detector_losses)
+        # losses.update(detector_losses)
         losses.update(proposal_losses)
     
-        return detections, losses
+        return proposals, losses
 
 
 class MaskRCNN(GenerallizedRCNN):

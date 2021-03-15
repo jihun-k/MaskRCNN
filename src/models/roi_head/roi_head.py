@@ -25,6 +25,15 @@ class RoIHead(nn.Module):
 
         # TODO initialize weight
 
+        # initialize
+        nn.init.normal_(self.box_head[0].weight, std=0.01)
+        nn.init.normal_(self.box_head[1].weight, std=0.01)
+        nn.init.normal_(self.cls_score.weight, std=0.01)
+        nn.init.normal_(self.bbox_pred.weight, std=0.001)
+
+        for l in [self.box_head[0], self.box_head[1], self.cls_score, self.bbox_pred]:
+            nn.init.constant_(l.bias, 0)
+
     def roi_align(
         self,
         features: List[torch.Tensor],
@@ -74,24 +83,27 @@ class RoIHead(nn.Module):
                     matched_gt_boxes [b, num_total_anchors, 4] (xyxy)
         '''
         
-        threshold = 0.5
+        pos_threshold = 0.5
+        neg_threshold = 0.1
 
         matched_gt_labels = []
         matched_gt_boxes = []
         for gt_boxes_i, gt_labels_i in zip(gt_boxes, gt_labels): # i th image in batch
-            matched_gt_labels_i = torch.zeros(proposals.shape[0], device=proposals.device)
+            matched_gt_labels_i = torch.ones(proposals.shape[0], device=proposals.device) * -1
             matched_gt_boxes_i = torch.zeros(proposals.shape, device=proposals.device)
 
             # (num_proposal) * (num_gt_box) match quality matrix 
             iou_matrix = box_util.get_iou(proposals, gt_boxes_i)
 
             matched_gt_score, matched_gt_idx = torch.max(iou_matrix, dim=1)
-            neg_idx = torch.where(matched_gt_score < threshold)[0]
+            invalid_idx = torch.where(matched_gt_score < neg_threshold)[0]
+            neg_idx = torch.where((matched_gt_score < pos_threshold) & (matched_gt_score >= neg_threshold))[0]
             matched_gt_idx = matched_gt_idx[matched_gt_idx]
 
             matched_gt_boxes_i = gt_boxes_i[matched_gt_idx]
             matched_gt_labels_i = gt_labels_i[matched_gt_idx]
 
+            matched_gt_labels_i[invalid_idx] = -1
             matched_gt_labels_i[neg_idx] = 0
 
             matched_gt_labels.append(matched_gt_labels_i)
@@ -102,6 +114,7 @@ class RoIHead(nn.Module):
     def sample_anchors(self, gt_labels):
         for gt_label in gt_labels:
             
+            print(gt_label.shape)
             positive = torch.where(gt_label >= 1)[0]
             negative = torch.where(gt_label == 0)[0]
 
@@ -143,7 +156,7 @@ class RoIHead(nn.Module):
         pos_mask = gt_labels >= 1
         num_pos_samples = pos_mask.sum().item()
         num_neg_samples = (gt_labels == 0).sum().item()
-        print("head # of pos/neg proposals: ", num_pos_samples, num_neg_samples)
+        print("# of head pos/neg proposals: ", num_pos_samples, num_neg_samples)
 
         # box regression loss
         target_deltas = [box_util.get_deltas(proposals, box_util.xywh_to_cxy(gt_boxes_i)) for gt_boxes_i in gt_boxes]
@@ -156,9 +169,9 @@ class RoIHead(nn.Module):
         
         # classification loss
         valid_mask = gt_labels >= 0
-        cls_score = cls_score # TODO batch
+        cls_score = cls_score.unsqueeze(0) # TODO batch
         loss_cls = F.cross_entropy(
-            cls_score, gt_labels[0], reduction="sum")
+            cls_score[valid_mask], gt_labels[valid_mask], reduction="sum")
         
         mini_batch_size = 256
         normalizer = mini_batch_size * num_images
@@ -209,7 +222,6 @@ class RoIHead(nn.Module):
         )
 
         if self.training:
-            # TODO label and sample proposals
             matched_gt_labels, matched_gt_boxes = self.label_proposals(
                 box_util.cwh_to_xyxy(proposals_i), [box_util.xywh_to_xyxy(x) for x in gt_boxes], gt_labels
             )
@@ -217,7 +229,6 @@ class RoIHead(nn.Module):
 
             losses = self.compute_loss(proposals_i, cls_score, bbox_pred, matched_gt_labels, matched_gt_boxes)
 
-        # TODO detection delta
         detections["boxes"] = bbox_pred
         detections["labels"] = cls_score
 

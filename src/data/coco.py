@@ -3,6 +3,8 @@ import os
 
 import torch
 from PIL import Image
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 from torch.utils.data import Dataset
 
 
@@ -107,6 +109,9 @@ class CocoDataset(Dataset):
         annotations = {"boxes": boxes, "labels": labels}
         
         return image, annotations
+
+    def evaluate():
+        return
 
 def coco_collate(batch):
     images = []

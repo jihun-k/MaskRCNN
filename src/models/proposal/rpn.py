@@ -121,6 +121,7 @@ class RPN(nn.Module):
         self.anchor_generator = AnchorGenerator(self.sizes, self.aspect_ratios)
         self.cfg = cfg
 
+    @torch.no_grad()
     def label_anchors(
         self,
         anchors: torch.Tensor,
@@ -178,6 +179,7 @@ class RPN(nn.Module):
 
         return gt_labels, matched_gt_boxes
 
+    @torch.no_grad()
     def sample_anchors(self, gt_labels):
         for gt_label in gt_labels:
             
@@ -244,46 +246,55 @@ class RPN(nn.Module):
 
         return losses
 
-    def nms(self, proposals, scores, num_anchors_in_levels):
+    def get_top_proposals(
+        self,
+        proposals: List[torch.Tensor],
+        scores: List[torch.Tensor],
+        nms_threshold: float = 0.7,
+        pre_nms_topk: int = 12000,
+        post_nms_topk: int = 1000,
+    ) -> List[List[torch.Tensor]]:
+
+        nms_proposals = []
+        # topk proposals from each feature level
         level_scores = []
         level_proposals = []
-        start_idx = 0
+        for proposals_lvl, scores_lvl in zip(proposals, scores):
+            # topk 12000
+            num_proposals_lvl = min(pre_nms_topk, scores_lvl.shape[-1])
 
-        nms_threshold = 0.7
-        pre_nms_topk = 1000
-        post_nms_topk = 100
-
-        # topk proposals from each feature level
-        for n in num_anchors_in_levels:
-            proposals_lvl = proposals[:,start_idx:start_idx+n]
-            scores_lvl = scores[:,start_idx:start_idx+n]
-            start_idx += n
-
-            num_proposals_lvl = min(n, pre_nms_topk) # 1000 anchors per each level
-
+            # topk scores
             scores_lvl, idx = torch.sort(scores_lvl, dim=1, descending=True)
             topk_scores_lvl = torch.narrow(scores_lvl, 1, 0, num_proposals_lvl)
             idx = torch.narrow(idx, 1, 0, num_proposals_lvl)
+
+            # topk proposals (per image)
             topk_proposals_lvl = torch.zeros([idx.shape[0], idx.shape[1], 4], device=idx.device)
             for i, topk_idx_image in enumerate(idx):
-                topk_proposals_lvl[i] = proposals_lvl[i, topk_idx_image]
+                topk_proposals_lvl[i] = proposals_lvl[i][topk_idx_image]
 
-            level_scores.append(topk_scores_lvl)
             level_proposals.append(topk_proposals_lvl)
+            level_scores.append(topk_scores_lvl)
 
-        # concat all levels
-        scores = torch.cat(level_scores, dim=1)
-        proposals = torch.cat(level_proposals, dim=1)
+        # concat topk anchors from all features
+        level_proposals = torch.cat(level_proposals, dim=1)
+        level_scores = torch.cat(level_scores, dim=1)
 
-        # nms for each image in batch
-        nms_proposals = []
-        for scores_i, proposals_i in zip(scores, proposals):
+        # post nms topk
+        for scores_i, proposals_i in zip(level_scores, level_proposals):
+            # anchor outside image
+            valid_idx = box_util.inside_box(proposals_i, (1024, 1024))
+            proposals_i = proposals_i[valid_idx]
+            scores_i = scores_i[valid_idx]
+
+            # nms
             keep_idx = torchvision.ops.nms(proposals_i, scores_i, nms_threshold)
             proposals_i = proposals_i[keep_idx]
+
+            # topk 1000
             proposals_i = proposals_i[:post_nms_topk]
             nms_proposals.append(proposals_i)
-            # print(proposals_i[keep_idx].shape)
-            
+
         return nms_proposals
 
     def forward(
@@ -349,22 +360,7 @@ class RPN(nn.Module):
             proposals_level = box_util.apply_deltas(anchor_level, bbox_delta_level)
             proposals.append(box_util.cwh_to_xyxy(proposals_level))
 
-        # TODO nms
-        # pred = self.nms(proposals, pred_objectness_logits, num_anchors_in_levels)
-
-        # topk per feature
-        pred = [] # List[List[Tensor]] (level, image)
-        for feature_proposal, feature_score in zip(proposals, pred_objectness_logits):
-            pred_feature = []
-            for prop_i, score_i in zip(feature_proposal, feature_score):
-                pos_val, pos_mask = score_i.topk(20)
-                pred_feature.append(prop_i[pos_mask])
-            pred.append(pred_feature)
-
-        # topk all
-        # pred = torch.cat(proposals, dim=1)
-        # scores = torch.cat(pred_objectness_logits, dim=1)
-        # pos_val, pos_mask = scores.topk(50)
-        # pred = pred[0][pos_mask]
+        # apply nms, get top 1000 proposals
+        pred = self.get_top_proposals(proposals, pred_objectness_logits, pre_nms_topk=12000, post_nms_topk=1000)
 
         return pred, losses
