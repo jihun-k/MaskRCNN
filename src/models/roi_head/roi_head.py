@@ -37,7 +37,7 @@ class RoIHead(nn.Module):
     def roi_align(
         self,
         features: List[torch.Tensor],
-        proposals: List[List[torch.Tensor]]
+        proposals: List[torch.Tensor]
     ) -> List[torch.Tensor]:
         '''
             roi align
@@ -47,15 +47,16 @@ class RoIHead(nn.Module):
                     for levels
                         feature map
                 proposals:
-                    for level features
-                        for images
-                            proposal
+                    for images
+                        proposal
             Returns:
                 roi:
                     for features
                         aligned roi
 
         '''
+
+        # TODO use ops.MultiScaleROIAlign
         output_size = 7
         roi = []
         for feature_level, proposal_level in zip(features, proposals):
@@ -84,7 +85,7 @@ class RoIHead(nn.Module):
         '''
         
         pos_threshold = 0.5
-        neg_threshold = 0.1
+        neg_threshold = 0.25
 
         matched_gt_labels = []
         matched_gt_boxes = []
@@ -183,7 +184,7 @@ class RoIHead(nn.Module):
     def forward(
         self,
         features: List[torch.Tensor],
-        proposals: List[List[torch.Tensor]],
+        proposals: List[torch.Tensor],
         gt_boxes: List[torch.Tensor] = None,
         gt_labels: List[torch.Tensor] = None,
     ) -> Tuple[List[Dict[str, torch.Tensor]], Dict[str, torch.Tensor]]:

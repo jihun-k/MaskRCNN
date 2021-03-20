@@ -283,7 +283,7 @@ class RPN(nn.Module):
         # post nms topk
         for scores_i, proposals_i in zip(level_scores, level_proposals):
             # anchor outside image
-            valid_idx = box_util.inside_box(proposals_i, (1024, 1024))
+            valid_idx = box_util.inside_box(proposals_i, self.cfg.image_size)
             proposals_i = proposals_i[valid_idx]
             scores_i = scores_i[valid_idx]
 
@@ -338,7 +338,7 @@ class RPN(nn.Module):
 
             # exclude out-of-image anchors in training time
             # for i, (lvl_anchor, lvl_cls, lvl_box) in enumerate(zip(anchors, pred_objectness_logits, pred_bbox_deltas)):
-            idx_inside = box_util.inside_box(box_util.cwh_to_xyxy(anchors_from_all_level), (1024, 1024))
+            idx_inside = box_util.inside_box(box_util.cwh_to_xyxy(anchors_from_all_level), self.cfg.image_size)
             anchors_from_all_level = anchors_from_all_level[idx_inside]
             cls_from_all_level = cls_from_all_level[:, idx_inside]
             bbox_from_all_level = bbox_from_all_level[:, idx_inside]
